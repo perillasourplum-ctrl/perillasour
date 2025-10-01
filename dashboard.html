@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>後台統計與訂單管理</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* 針對小螢幕，調整按鈕布局 */
+        @media (max-width: 576px) {
+            .btn-group-responsive {
+                display: flex;
+                flex-direction: column;
+            }
+            .btn-group-responsive .btn {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-light">
+
+<div class="container my-4">
+    <h1 class="text-center text-primary mb-4">後台統計與訂單管理</h1>
+    
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card border-primary shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title text-primary">總訂單數</h5>
+                    <p id="total-orders" class="fs-3 fw-bold">-</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card border-success shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title text-success">總銷售額</h5>
+                    <p id="total-sales" class="fs-3 fw-bold">-</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2 class="h4 mb-3">訂單列表</h2>
+    <div class="table-responsive shadow-sm">
+        <table id="orders-table" class="table table-hover table-striped align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>訂單編號</th>
+                    <th>日期</th>
+                    <th>姓名</th>
+                    <th>總金額</th>
+                    <th class="text-center">操作</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="orderDetailsModal" tabindex="-1" aria-labelledby="orderDetailsLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="orderDetailsLabel">訂單明細</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="關閉"></button>
+            </div>
+            <div class="modal-body">
+                <p><strong>訂單編號:</strong> <span id="modal-order-id"></span></p>
+                <p><strong>姓名:</strong> <span id="modal-name"></span></p>
+                <p><strong>電話:</strong> <span id="modal-phone"></span></p>
+                <p><strong>地址:</strong> <span id="modal-address"></span></p>
+                <p><strong>備註:</strong> <span id="modal-notes"></span></p>
+                <hr>
+                <h6>訂單內容</h6>
+                <ul id="modal-order-items" class="list-group mb-3"></ul>
+                <p><strong>總金額:</strong> <span id="modal-total"></span></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    function fetchStatsAndOrders() {
+        google.script.run
+            .withSuccessHandler(displayStats)
+            .withFailureHandler(showError)
+            .getStats();
+            
+        google.script.run
+            .withSuccessHandler(displayOrders)
+            .withFailureHandler(showError)
+            .getOrders();
+    }
+
+    function displayStats(stats) {
+        document.getElementById('total-orders').textContent = stats.totalOrders;
+        document.getElementById('total-sales').textContent = `NT$${stats.totalSales}`;
+    }
+    
+    function displayOrders(orders) {
+        const tableBody = document.getElementById('orders-table').querySelector('tbody');
+        tableBody.innerHTML = '';
+        orders.forEach(order => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${order.orderId}</td>
+                <td>${order.date}</td>
+                <td>${order.name}</td>
+                <td>NT$${order.total}</td>
+                <td class="text-center">
+                    <div class="btn-group-responsive">
+                        <button class="btn btn-sm btn-primary me-2" onclick="showOrderDetails(${JSON.stringify(order).replace(/'/g, "\\'").replace(/"/g, "'")})">查看</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteOrder('${order.orderId}')">確認出貨後刪除</button>
+                    </div>
+                </td>
+            `;
+            tableBody.appendChild(row);
+        });
+    }
+
+    // 顯示訂單明細 (Bootstrap Modal)
+    function showOrderDetails(order) {
+        document.getElementById('modal-order-id').textContent = order.orderId;
+        document.getElementById('modal-name').textContent = order.name;
+        document.getElementById('modal-phone').textContent = order.phone;
+        document.getElementById('modal-address').textContent = order.address;
+        document.getElementById('modal-notes').textContent = order.notes || '無';
+        document.getElementById('modal-total').textContent = `NT$${order.total}`;
+        
+        const itemsList = document.getElementById('modal-order-items');
+        itemsList.innerHTML = '';
+        order.details.forEach(item => {
+            const li = document.createElement('li');
+            li.className = "list-group-item";
+            li.textContent = `${item.name} x ${item.quantity} (NT$${item.price * item.quantity})`;
+            itemsList.appendChild(li);
+        });
+        
+        const modal = new bootstrap.Modal(document.getElementById('orderDetailsModal'));
+        modal.show();
+    }
+
+    // 刪除訂單
+    function deleteOrder(orderId) {
+        if (confirm(`確定要刪除此訂單 ${orderId} 嗎？（已出貨/異常單）`)) {
+            google.script.run
+                .withSuccessHandler(fetchStatsAndOrders)
+                .withFailureHandler(showError)
+                .deleteOrder(orderId);
+        }
+    }
+
+    function showError(error) {
+        alert('發生錯誤: ' + (error.message || error));
+    }
+    
+    document.addEventListener('DOMContentLoaded', fetchStatsAndOrders);
+</script>
+</body>
+</html>
